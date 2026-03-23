@@ -10,7 +10,7 @@ from io import BytesIO
 SOURCE_DIR = "data"
 # smb://nas1.its.carleton.edu/arbvideo_
 NAS_ROOT = "data/ziptest"
-MASTER_MANIFEST_PATH = "archive.csv"
+MASTER_MANIFEST_PATH = "data/archive.csv"
 DEBUG = True 
 
 def get_sha256(file_bytes):
