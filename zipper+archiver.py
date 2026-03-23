@@ -8,6 +8,7 @@ from io import BytesIO
 
 # --- CONFIGURATION ---
 SOURCE_DIR = "data/4Mar'25"
+# actual nas: smb://nas1.its.carleton.edu/arbvideo_
 NAS_ROOT = "data/ziptest"
 MASTER_MANIFEST_PATH = "archive.csv"
 DEBUG = True 
