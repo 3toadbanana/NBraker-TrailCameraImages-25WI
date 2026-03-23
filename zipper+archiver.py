@@ -7,7 +7,7 @@ from datetime import datetime
 from io import BytesIO
 
 # --- CONFIGURATION ---
-SOURCE_DIR = "data/4Mar'25"
+SOURCE_DIR = "data"
 # actual nas: smb://nas1.its.carleton.edu/arbvideo_
 NAS_ROOT = "smb://nas1.its.carleton.edu/arbvideo_"
 MASTER_MANIFEST_PATH = "archive.csv"
