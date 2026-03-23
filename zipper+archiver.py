@@ -7,7 +7,8 @@ from datetime import datetime
 from io import BytesIO
 
 # --- CONFIGURATION ---
-SOURCE_DIR = "data/4Mar'25"
+SOURCE_DIR = "data"
+# smb://nas1.its.carleton.edu/arbvideo_
 NAS_ROOT = "data/ziptest"
 MASTER_MANIFEST_PATH = "archive.csv"
 DEBUG = True 
@@ -23,6 +24,13 @@ def get_exif_date(file_bytes):
     if date_str:
         return datetime.strptime(str(date_str), '%Y:%m:%d %H:%M:%S')
     return None
+
+# --- PRE-FLIGHT CHECK ---
+if not os.path.exists(NAS_ROOT):
+    print(f"ERROR: Cannot find NAS at {NAS_ROOT}")
+    print("Please ensure your NAS is mounted/connected and try again.")
+    input("\nPress Enter to exit...")
+    exit()
 
 # 1. Load the existing Master Manifest (Bypassing fsspec)
 if os.path.exists(MASTER_MANIFEST_PATH):
