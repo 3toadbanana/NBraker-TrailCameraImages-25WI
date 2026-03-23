@@ -7,9 +7,8 @@ from datetime import datetime
 from io import BytesIO
 
 # --- CONFIGURATION ---
-SOURCE_DIR = "data"
-# actual nas: smb://nas1.its.carleton.edu/arbvideo_
-NAS_ROOT = "smb://nas1.its.carleton.edu/arbvideo_"
+SOURCE_DIR = "data/4Mar'25"
+NAS_ROOT = "data/ziptest"
 MASTER_MANIFEST_PATH = "archive.csv"
 DEBUG = True 
 
@@ -25,24 +24,23 @@ def get_exif_date(file_bytes):
         return datetime.strptime(str(date_str), '%Y:%m:%d %H:%M:%S')
     return None
 
-# 1. Load the existing Master Manifest
+# 1. Load the existing Master Manifest (Bypassing fsspec)
 if os.path.exists(MASTER_MANIFEST_PATH):
-    df_master = pd.read_csv(MASTER_MANIFEST_PATH)
+    with open(MASTER_MANIFEST_PATH, 'r', encoding='utf-8') as f:
+        df_master = pd.read_csv(f)
     existing_records = set(zip(df_master['camera_id'], df_master['original_filename']))
 else:
     df_master = pd.DataFrame()
     existing_records = set()
 
-# We only store metadata in this list, not the actual image bytes
 batch_metadata = []
 stats = {"processed": 0, "duplicates": 0, "no_folder": 0, "no_exif": 0}
 
-# 2. Pre-Scan: Collect metadata to determine Date Range
+# 2. Pre-Scan: Collect metadata
 print(f"Scanning {SOURCE_DIR}...")
 for root, dirs, files in os.walk(SOURCE_DIR):
     for filename in files:
         if filename.lower().endswith(('.jpg', '.jpeg')):
-            
             rel_path = os.path.relpath(root, SOURCE_DIR)
             folder_parts = rel_path.split(os.sep)
             
@@ -59,12 +57,8 @@ for root, dirs, files in os.walk(SOURCE_DIR):
                 continue
             
             full_path = os.path.join(root, filename)
-            
-            # Read just enough to get the Date (Streaming start)
             try:
                 with open(full_path, 'rb') as f:
-                    # Reading the whole file here briefly to get EXIF
-                    # (This is cleared as soon as we leave this loop iteration)
                     temp_bytes = f.read()
                     timestamp = get_exif_date(temp_bytes)
             except Exception as e:
@@ -84,11 +78,10 @@ for root, dirs, files in os.walk(SOURCE_DIR):
                 'size': len(temp_bytes)
             })
 
-# 3. Process the Streaming ZIP
+# 3. Streaming ZIP Process
 new_master_rows = []
 
 if batch_metadata:
-    # Sort by timestamp to define the batch range for the filename
     batch_metadata.sort(key=lambda x: x['timestamp_obj'])
     
     first_date = batch_metadata[0]['timestamp_obj'].strftime('%Y%b%d')
@@ -105,19 +98,17 @@ if batch_metadata:
 
     print(f"\nStreaming {len(batch_metadata)} files to: {zip_name}...")
     
+    # zipfile handles its own streaming write internally
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
         for item in batch_metadata:
-            # Step-by-step processing to keep RAM low
             with open(item['full_path'], 'rb') as f:
                 current_file_bytes = f.read()
             
             ts = item['timestamp_obj']
-            formatted_name = f"{ts.strftime('%Y-%m-%d')}_{ts.strftime('%H%M%S')}_{item['camera_id']}{item['original_filename']}"
+            formatted_name = f"{ts.strftime('%Y-%m-%d')}_{ts.strftime('%H%M%S')}_{item['camera_id']}_{item['original_filename']}"
             
-            # Compress and write to the NAS
             zf.writestr(formatted_name, current_file_bytes)
             
-            # Generate record
             row = {
                 'internal_zip_name': formatted_name,
                 'original_filename': item['original_filename'],
@@ -130,19 +121,21 @@ if batch_metadata:
             mini_manifest_rows.append(row)
             new_master_rows.append(row)
             stats["processed"] += 1
-            
             if DEBUG: print(f"  -> Archived: {formatted_name}")
-            # current_file_bytes is discarded here as we loop to the next file
 
-    # 4. Save Mini Manifest
-    pd.DataFrame(mini_manifest_rows).to_csv(mini_csv_path, index=False)
+    # 4. Save Mini Manifest (Bypassing fsspec)
+    if mini_manifest_rows:
+        with open(mini_csv_path, 'w', encoding='utf-8', newline='') as f:
+            pd.DataFrame(mini_manifest_rows).to_csv(f, index=False)
 
-# 5. Finalize Master Manifest
+# 5. Finalize Master Manifest (Bypassing fsspec)
 if new_master_rows:
     df_new = pd.DataFrame(new_master_rows)
     df_final = pd.concat([df_master, df_new], ignore_index=True)
     df_final.sort_values(by=['camera_id', 'timestamp'], inplace=True)
-    df_final.to_csv(MASTER_MANIFEST_PATH, index=False)
+    
+    with open(MASTER_MANIFEST_PATH, 'w', encoding='utf-8', newline='') as f:
+        df_final.to_csv(f, index=False)
 
 # 6. Final Summary Report
 print("\n" + "="*30)
