@@ -9,9 +9,8 @@ from datetime import datetime
 from io import BytesIO
 
 # --- CONFIGURATION ---
-NAS_ROOT = "ziptest"
-MASTER_MANIFEST_PATH = "archive.csv"
 DEBUG = True 
+MANIFEST_NAME = "master_manifest.csv" 
 
 def get_sha256(file_bytes):
     return hashlib.sha256(file_bytes).hexdigest()
@@ -24,24 +23,22 @@ def get_exif_date(file_bytes):
     return None
 
 def run_archiver():
-    # 1. Select SOURCE_DIR via GUI
     root_gui = tk.Tk()
-    root_gui.withdraw()  # Hide the main tiny tkinter window
+    root_gui.withdraw()
     
-    source_dir = filedialog.askdirectory(title="Select the 'data' folder containing Camera IDs")
+    # 1. Select SOURCE_DIR
+    source_dir = filedialog.askdirectory(title="STEP 1: Select the 'data' folder (SD Card/Dump)")
+    if not source_dir: return
+
+    # 2. Select NAS_ROOT (Destination)
+    nas_root = filedialog.askdirectory(title="STEP 2: Select the Destination (NAS/Archive Folder)")
+    if not nas_root: return
+
+    # 3. Load Master Manifest FROM THE DESTINATION
+    master_path = os.path.join(nas_root, MANIFEST_NAME)
     
-    if not source_dir:
-        print("No folder selected. Exiting.")
-        return
-
-    # 2. Pre-flight Check for NAS
-    if not os.path.exists(NAS_ROOT):
-        messagebox.showerror("Error", f"NAS Root not found at: {NAS_ROOT}\nPlease mount the drive and try again.")
-        return
-
-    # 3. Load Master Manifest
-    if os.path.exists(MASTER_MANIFEST_PATH):
-        with open(MASTER_MANIFEST_PATH, 'r', encoding='utf-8') as f:
+    if os.path.exists(master_path):
+        with open(master_path, 'r', encoding='utf-8') as f:
             df_master = pd.read_csv(f)
         existing_sizes = set(df_master['file_size_bytes'].astype(int))
         existing_hashes = set(df_master['checksum_sha256'].astype(str))
@@ -69,7 +66,7 @@ def run_archiver():
                 full_path = os.path.join(root, filename)
                 file_size = os.path.getsize(full_path)
 
-                # Hybrid logic
+                # Hybrid logic: Size then Hash
                 is_potential_dupe = file_size in existing_sizes
                 
                 try:
@@ -103,8 +100,7 @@ def run_archiver():
                     if DEBUG: print(f"[ERR] {filename}: {e}")
                     continue
 
-    # 5. Process ZIP
-    new_master_rows = []
+    # 5. Sort and Process ZIP
     if batch_metadata:
         batch_metadata.sort(key=lambda x: x['timestamp_obj'])
         
@@ -114,11 +110,11 @@ def run_archiver():
         zip_name = f"{first_date}_{last_date}.zip"
         mini_csv_name = f"{first_date}_{last_date}_manifest.csv"
         
-        os.makedirs(NAS_ROOT, exist_ok=True)
-        zip_path = os.path.join(NAS_ROOT, zip_name)
-        mini_csv_path = os.path.join(NAS_ROOT, mini_csv_name)
+        zip_path = os.path.join(nas_root, zip_name)
+        mini_csv_path = os.path.join(nas_root, mini_csv_name)
         
         mini_manifest_rows = []
+        new_master_rows = []
 
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for item in batch_metadata:
@@ -140,7 +136,7 @@ def run_archiver():
                 stats["processed"] += 1
                 item['file_bytes'] = None 
 
-        # Save Manifests
+        # 6. Save Manifests to Destination
         with open(mini_csv_path, 'w', encoding='utf-8', newline='') as f:
             pd.DataFrame(mini_manifest_rows).to_csv(f, index=False)
             
@@ -148,12 +144,12 @@ def run_archiver():
             df_new = pd.DataFrame(new_master_rows)
             df_final = pd.concat([df_master, df_new], ignore_index=True)
             df_final.sort_values(by=['camera_id', 'timestamp'], inplace=True)
-            with open(MASTER_MANIFEST_PATH, 'w', encoding='utf-8', newline='') as f:
+            with open(master_path, 'w', encoding='utf-8', newline='') as f:
                 df_final.to_csv(f, index=False)
 
-        messagebox.showinfo("Success", f"Archived {stats['processed']} images to {zip_name}")
+        messagebox.showinfo("Success", f"Archive Complete!\n\nLocation: {nas_root}\nImages: {stats['processed']}")
     else:
-        messagebox.showwarning("Notice", "No new unique images found to archive.")
+        messagebox.showwarning("Notice", "No new unique images found.")
 
 if __name__ == "__main__":
     run_archiver()
