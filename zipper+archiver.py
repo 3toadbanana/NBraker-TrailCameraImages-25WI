@@ -10,7 +10,7 @@ from io import BytesIO
 
 # --- CONFIGURATION ---
 DEBUG = True 
-MANIFEST_NAME = "master_manifest.csv" 
+MANIFEST_NAME = "archive.csv"
 
 def get_sha256(file_bytes):
     return hashlib.sha256(file_bytes).hexdigest()
@@ -22,19 +22,26 @@ def get_exif_date(file_bytes):
         return datetime.strptime(str(date_str), '%Y:%m:%d %H:%M:%S')
     return None
 
+def force_to_front(window):
+    """Brings a tkinter window to the absolute front of the OS."""
+    window.attributes('-topmost', True)
+    window.update()
+    window.attributes('-topmost', False)
+    window.focus_force()
+
 def run_archiver():
+    # Setup hidden main window
     root_gui = tk.Tk()
     root_gui.withdraw()
     
-    # 1. Select SOURCE_DIR
-    source_dir = filedialog.askdirectory(title="STEP 1: Select the 'data' folder (SD Card Dump)")
+    # 1. Select Folders
+    source_dir = filedialog.askdirectory(title="STEP 1: Select the 'data' folder (SD Card/Dump)")
     if not source_dir: return
 
-    # 2. Select NAS_ROOT (Destination)
     nas_root = filedialog.askdirectory(title="STEP 2: Select the Destination (NAS/Archive Folder)")
     if not nas_root: return
 
-    # 3. Load Master Manifest FROM THE DESTINATION
+    # 3. Load Master Manifest from NAS
     master_path = os.path.join(nas_root, MANIFEST_NAME)
     
     if os.path.exists(master_path):
@@ -51,7 +58,7 @@ def run_archiver():
     stats = {"processed": 0, "duplicates": 0, "no_folder": 0, "no_exif": 0}
 
     # 4. Hybrid Scan
-    print(f"Scanning: {source_dir}")
+    print(f"Scanning: {source_dir}...")
     for root, dirs, files in os.walk(source_dir):
         for filename in files:
             if filename.lower().endswith(('.jpg', '.jpeg')):
@@ -64,12 +71,11 @@ def run_archiver():
                 
                 camera_id = folder_parts[0]
                 full_path = os.path.join(root, filename)
-                file_size = os.path.getsize(full_path)
-
-                # Hybrid logic: Size then Hash
-                is_potential_dupe = file_size in existing_sizes
                 
                 try:
+                    file_size = os.path.getsize(full_path)
+                    is_potential_dupe = file_size in existing_sizes
+                    
                     with open(full_path, 'rb') as f:
                         file_bytes = f.read()
 
@@ -100,7 +106,7 @@ def run_archiver():
                     if DEBUG: print(f"[ERR] {filename}: {e}")
                     continue
 
-    # 5. Sort and Process ZIP
+    # 5. Process ZIP
     if batch_metadata:
         batch_metadata.sort(key=lambda x: x['timestamp_obj'])
         
@@ -115,6 +121,8 @@ def run_archiver():
         
         mini_manifest_rows = []
         new_master_rows = []
+
+        print(f"Archiving to {zip_path}...")
 
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             for item in batch_metadata:
@@ -136,7 +144,7 @@ def run_archiver():
                 stats["processed"] += 1
                 item['file_bytes'] = None 
 
-        # 6. Save Manifests to Destination
+        # 6. Save Manifests
         with open(mini_csv_path, 'w', encoding='utf-8', newline='') as f:
             pd.DataFrame(mini_manifest_rows).to_csv(f, index=False)
             
@@ -147,9 +155,21 @@ def run_archiver():
             with open(master_path, 'w', encoding='utf-8', newline='') as f:
                 df_final.to_csv(f, index=False)
 
-        messagebox.showinfo("Success", f"Archive Complete!\n\nLocation: {nas_root}\nImages: {stats['processed']}")
+        # --- PRIORITY POPUP ---
+        # Create a temporary popup window to force focus
+        final_popup = tk.Toplevel(root_gui)
+        final_popup.withdraw()
+        force_to_front(final_popup)
+        messagebox.showinfo("Success", f"Archive Complete!\n\nLocation: {nas_root}\nImages: {stats['processed']}", parent=final_popup)
+        final_popup.destroy()
+
     else:
-        messagebox.showwarning("Notice", "No new unique images found.")
+        # Priority popup for "No Images"
+        no_img_popup = tk.Toplevel(root_gui)
+        no_img_popup.withdraw()
+        force_to_front(no_img_popup)
+        messagebox.showwarning("Notice", "No new unique images found.", parent=no_img_popup)
+        no_img_popup.destroy()
 
 if __name__ == "__main__":
     run_archiver()
