@@ -27,7 +27,7 @@ def run_archiver():
     root_gui.withdraw()
     
     # 1. Select SOURCE_DIR
-    source_dir = filedialog.askdirectory(title="STEP 1: Select the 'data' folder (SD Card/Dump)")
+    source_dir = filedialog.askdirectory(title="STEP 1: Select the 'data' folder (SD Card Dump)")
     if not source_dir: return
 
     # 2. Select NAS_ROOT (Destination)
